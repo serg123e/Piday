@@ -451,7 +451,7 @@ function playKick(time) {
   gain.gain.setValueAtTime(0.8, time);
   gain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
 
-  // Click
+  // Click transient
   const osc2 = ctx.createOscillator();
   const gain2 = ctx.createGain();
   osc2.type = 'sine';
@@ -462,9 +462,9 @@ function playKick(time) {
   osc.connect(gain).connect(channels.kick);
   osc2.connect(gain2).connect(channels.kick);
   osc.start(time);
-  osc.stop(time + 0.15);
+  osc.stop(time + 0.16); // stop after envelope decays
   osc2.start(time);
-  osc2.stop(time + 0.05);
+  osc2.stop(time + 0.03); // stop after gain reaches ~zero
 }
 
 function playHihat(time, vol) {
@@ -496,7 +496,7 @@ function playBassNote(time, freq, duration, filterCutoff) {
 
   // Multi-harmonic oscillators
   const harmonics = [1, 2, 3, 4, 5];
-  const gains = [1.0, 0.6, 0.35, 0.2, 0.1];
+  const gains_arr = [1.0, 0.6, 0.35, 0.2, 0.1];
 
   const merger = ctx.createGain();
   merger.gain.value = 0.35;
@@ -504,22 +504,24 @@ function playBassNote(time, freq, duration, filterCutoff) {
   const filter = ctx.createBiquadFilter();
   filter.type = 'lowpass';
   filter.frequency.value = filterCutoff;
-  filter.Q.value = 2;
+  filter.Q.value = 0.7; // no resonance to avoid clicks
 
   const env = ctx.createGain();
-  env.gain.setValueAtTime(0.01, time);
-  env.gain.linearRampToValueAtTime(1.0, time + 0.005);
-  env.gain.exponentialRampToValueAtTime(0.01, time + duration * 0.9);
+  env.gain.setValueAtTime(0.001, time);
+  env.gain.linearRampToValueAtTime(1.0, time + 0.003);
+  env.gain.setValueAtTime(1.0, time + 0.003);
+  env.gain.exponentialRampToValueAtTime(0.001, time + duration);
 
+  const stopTime = time + duration + 0.01;
   harmonics.forEach((h, i) => {
     const osc = ctx.createOscillator();
     osc.type = 'sine';
     osc.frequency.value = freq * h;
     const g = ctx.createGain();
-    g.gain.value = gains[i];
+    g.gain.value = gains_arr[i];
     osc.connect(g).connect(merger);
     osc.start(time);
-    osc.stop(time + duration);
+    osc.stop(stopTime); // stop after envelope reaches zero
   });
 
   merger.connect(env).connect(filter).connect(channels.bass);
@@ -532,9 +534,11 @@ function playPad(time, freq, duration) {
   merger.gain.value = 0.06;
 
   const env = ctx.createGain();
+  const attackEnd = time + Math.min(0.3, duration * 0.3);
+  const releaseStart = time + duration - Math.min(0.5, duration * 0.4);
   env.gain.setValueAtTime(0.001, time);
-  env.gain.linearRampToValueAtTime(1.0, time + Math.min(0.3, duration * 0.3));
-  env.gain.setValueAtTime(1.0, time + duration - Math.min(0.5, duration * 0.4));
+  env.gain.linearRampToValueAtTime(1.0, attackEnd);
+  env.gain.linearRampToValueAtTime(1.0, releaseStart);
   env.gain.linearRampToValueAtTime(0.001, time + duration);
 
   // LFO for movement
@@ -824,9 +828,9 @@ function highlightDigit(idx) {
     for (let i = start; i < end; i++) {
       const ch = PI_STR[i];
       if (ch === '.') {
-        html += `<span class="dot">${ch}</span>`;
+        html += `<span class="dot">. </span>`;
       } else if (i === idx) {
-        html += `<span class="current">${ch}</span>`;
+        html += `<span class="current">${ch} </span>`;
       } else if (i < idx) {
         html += `<span class="dim">${ch} </span>`;
       } else {
