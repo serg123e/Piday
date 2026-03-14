@@ -9,6 +9,7 @@ Every digit of π controls the melody — spoken aloud over a full psy-trance pr
 **[Open Pi Trance Web App](https://serg123e.github.io/Piday/)** — infinite real-time generation, no install needed.
 
 Features:
+- Truly infinite — digits of π fetched on-the-fly from [pi.delivery API](https://pi.delivery)
 - Toggle channels on/off: kick, bass, hihat, pad, riser, voice
 - Adjust BPM, digits per phrase, rest beats, filter sweep, voice volume
 - Scrolling digit display with current position highlighted
