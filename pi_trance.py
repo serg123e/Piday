@@ -188,13 +188,16 @@ def generate_tts_digits():
     # Step 3: Align all samples so stress falls at the same offset
     # Target stress position: 80ms from start (gives a short attack before the accent)
     STRESS_TARGET_MS = 80
+    # Per-digit stress offset overrides (ms adjustment from target)
+    stress_overrides = {'9': -20}  # "nine" has broad peak, shift 20ms earlier
     print(f"    Aligning stress to {STRESS_TARGET_MS}ms, target total {target_ms}ms")
 
     normalized = {}
     for d, (seg, stress_ms) in sped_up.items():
         word = digit_words[d]
         # How much to shift: positive = add silence at start, negative = trim start
-        shift_ms = int(STRESS_TARGET_MS - stress_ms)
+        override = stress_overrides.get(d, 0)
+        shift_ms = int(STRESS_TARGET_MS + override - stress_ms)
 
         if shift_ms > 0:
             # Pad silence at the beginning
