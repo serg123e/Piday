@@ -20,20 +20,19 @@ BARS = 64
 BEATS_PER_BAR = 4
 TOTAL_BEATS = BARS * BEATS_PER_BAR
 
-# Phrasing: speak digits for PHRASE_SPEAK bars, rest for PHRASE_REST bars
-PHRASE_SPEAK_BARS = 3   # 3 bars of digits (12 digits at 1/beat)
-PHRASE_REST_BARS = 1    # 1 bar pause ("inhale")
+# Phrasing: digits every 2 beats, speak for PHRASE_SPEAK bars, rest for PHRASE_REST bars
+BEATS_PER_DIGIT = 2     # one digit every 2 beats
+PHRASE_SPEAK_BARS = 3    # 3 bars of digits on "exhale"
+PHRASE_REST_BARS = 1     # 1 bar pause "inhale"
 PHRASE_BARS = PHRASE_SPEAK_BARS + PHRASE_REST_BARS  # 4-bar phrase cycle
 NUM_PHRASES = BARS // PHRASE_BARS  # 16 phrases
-DIGITS_PER_PHRASE = PHRASE_SPEAK_BARS * BEATS_PER_BAR  # 12 digits per phrase
-TOTAL_DIGITS = NUM_PHRASES * DIGITS_PER_PHRASE  # 192 digits
+DIGITS_PER_PHRASE = (PHRASE_SPEAK_BARS * BEATS_PER_BAR) // BEATS_PER_DIGIT  # 6 digits
+TOTAL_DIGITS = NUM_PHRASES * DIGITS_PER_PHRASE  # 96 digits
 
-# Pi digits — 192+ digits
+# Pi digits — 96+ digits
 PI_DIGITS = (
     "31415926535897932384626433832795028841971693993751"
     "05820974944592307816406286208998628034825342117067"
-    "98214808651328230664709384460955058223172535940812"
-    "84811174502841027019385211055596446229489549303819"
 )
 PI_DIGITS = PI_DIGITS[:TOTAL_DIGITS]
 
@@ -131,16 +130,27 @@ def generate_hihat(duration_sec=0.05, sample_rate=SAMPLE_RATE):
     return hihat * 0.15
 
 
+def _find_stress_position(samples, sample_rate):
+    """Find the stress (peak energy) position in a speech sample using RMS envelope."""
+    window = int(0.020 * sample_rate)  # 20ms window
+    hop = window // 4  # 5ms hop
+    rms = np.array([np.sqrt(np.mean(samples[i:i + window] ** 2))
+                     for i in range(0, len(samples) - window, hop)])
+    peak_idx = np.argmax(rms)
+    peak_sample = peak_idx * hop
+    return peak_sample
+
+
 def generate_tts_digits():
-    """Generate all 10 digit TTS samples, normalized to equal duration with same pitch."""
+    """Generate all 10 digit TTS samples, stress-aligned and duration-normalized."""
     digit_words = {
         '0': 'zero', '1': 'one', '2': 'two', '3': 'three',
         '4': 'four', '5': 'five', '6': 'six', '7': 'seven',
         '8': 'eight', '9': 'nine'
     }
 
-    # Step 1: Generate raw TTS for all 10 digits
-    raw_segments = {}
+    # Step 1: Generate raw TTS for all 10 digits, find stress positions
+    raw_data = {}  # {digit: (AudioSegment, stress_ms)}
     for d, word in digit_words.items():
         tts = gTTS(text=word, lang='en', slow=False)
         buf = io.BytesIO()
@@ -148,33 +158,64 @@ def generate_tts_digits():
         buf.seek(0)
         audio = AudioSegment.from_mp3(buf)
         audio = audio.set_frame_rate(SAMPLE_RATE).set_channels(1)
-        # Strip silence from start and end
         audio = _strip_silence(audio)
-        raw_segments[d] = audio
-        print(f"    TTS '{word}': {len(audio)}ms")
 
-    # Step 2: Target duration — fits within one beat with room to breathe
-    # At 140 BPM, one beat = ~428ms. Target ~250ms for snappy delivery.
-    target_ms = 250
-    print(f"    Target duration: {target_ms}ms")
+        # Analyze stress position
+        samp = np.array(audio.get_array_of_samples(), dtype=np.float64) / 32768.0
+        stress_sample = _find_stress_position(samp, SAMPLE_RATE)
+        stress_ms = stress_sample / SAMPLE_RATE * 1000
 
-    # Step 3: Speed up longer samples (preserving pitch) to match target
+        raw_data[d] = (audio, stress_ms)
+        print(f"    TTS '{word}': {len(audio)}ms, stress at {stress_ms:.0f}ms")
+
+    # Step 2: Speed up all to target duration (preserving pitch)
+    # Digits every 2 beats at 140 BPM = ~857ms slot. Target ~400ms for clean fit.
+    target_ms = 400
+    sped_up = {}
+    for d, (seg, stress_ms) in raw_data.items():
+        orig_len = len(seg)
+        if orig_len > target_ms + 30:
+            ratio = orig_len / target_ms
+            seg_fast = speedup(seg, playback_speed=ratio, chunk_size=50, crossfade=25)
+            # Recalculate stress position after speedup
+            samp = np.array(seg_fast.get_array_of_samples(), dtype=np.float64) / 32768.0
+            new_stress = _find_stress_position(samp, SAMPLE_RATE) / SAMPLE_RATE * 1000
+        else:
+            seg_fast = seg
+            new_stress = stress_ms
+        sped_up[d] = (seg_fast, new_stress)
+
+    # Step 3: Align all samples so stress falls at the same offset
+    # Target stress position: 80ms from start (gives a short attack before the accent)
+    STRESS_TARGET_MS = 80
+    print(f"    Aligning stress to {STRESS_TARGET_MS}ms, target total {target_ms}ms")
+
     normalized = {}
-    for d, seg in raw_segments.items():
-        if len(seg) > target_ms + 30:  # needs speedup
-            ratio = len(seg) / target_ms
-            seg = speedup(seg, playback_speed=ratio, chunk_size=50, crossfade=25)
-        # Hard-trim to exact target + apply fade out
+    for d, (seg, stress_ms) in sped_up.items():
+        word = digit_words[d]
+        # How much to shift: positive = add silence at start, negative = trim start
+        shift_ms = int(STRESS_TARGET_MS - stress_ms)
+
+        if shift_ms > 0:
+            # Pad silence at the beginning
+            seg = AudioSegment.silent(duration=shift_ms, frame_rate=SAMPLE_RATE) + seg
+        elif shift_ms < 0:
+            # Trim from the beginning
+            seg = seg[-shift_ms:]
+
+        # Trim/pad to exact target duration
         seg = seg[:target_ms]
-        seg = seg.fade_out(30)
-        # Pad if slightly shorter
         if len(seg) < target_ms:
             seg = seg + AudioSegment.silent(duration=target_ms - len(seg),
                                             frame_rate=SAMPLE_RATE)
-        # Convert to numpy
-        samples = np.array(seg.get_array_of_samples(), dtype=np.float64)
-        samples = samples / 32768.0
-        normalized[d] = samples
+        seg = seg.fade_out(40)
+
+        # Verify final stress position
+        samp = np.array(seg.get_array_of_samples(), dtype=np.float64) / 32768.0
+        final_stress = _find_stress_position(samp, SAMPLE_RATE) / SAMPLE_RATE * 1000
+        print(f"    '{word}': shift {shift_ms:+d}ms → stress at {final_stress:.0f}ms")
+
+        normalized[d] = samp
 
     return normalized
 
@@ -235,11 +276,12 @@ def main():
         bass = generate_bassline(bar, actual_bar_samples)
         mix[bar_start:bar_end] += bass[:actual_bar_samples]
 
-    # === TTS Pi digits — one per beat, with phrase breathing ===
-    # Pattern: 3 bars speak (12 digits) + 1 bar rest, in 4-bar phrases
-    # Volume envelope per phrase simulates exhale (loud→fade) then silence (inhale)
-    print("Generating Pi digit speech (phrased)...")
+    # === TTS Pi digits — one every 2 beats, with phrase breathing ===
+    # Pattern: 3 bars speak (6 digits) + 1 bar rest (inhale), in 4-bar phrases
+    # Volume envelope per phrase simulates exhale then silence
+    print("Generating Pi digit speech (stress-aligned, phrased)...")
     tts_digits = generate_tts_digits()
+    digit_interval_sec = beat_duration_sec * BEATS_PER_DIGIT
 
     digit_index = 0
     for phrase in range(NUM_PHRASES):
@@ -251,19 +293,17 @@ def main():
             digit = PI_DIGITS[digit_index]
             speech = tts_digits[digit].copy()
 
-            # Position within phrase: one digit per beat
-            digit_time = phrase_start_sec + d * beat_duration_sec
-            pos = int(digit_time * SAMPLE_RATE + beat_duration_sec * SAMPLE_RATE * 0.15)
+            # Position: every 2 beats within the phrase
+            digit_time = phrase_start_sec + d * digit_interval_sec
+            pos = int(digit_time * SAMPLE_RATE)
 
-            # Exhale envelope: starts strong, gently fades toward end of phrase
-            # d goes 0..11, progress 0.0..1.0
+            # Exhale envelope: starts strong, fades toward end of phrase
             progress = d / max(DIGITS_PER_PHRASE - 1, 1)
-            # Slight ramp up at start (first 2 digits), then gradual fade
             if progress < 0.15:
-                vol = 0.6 + progress * 2.5  # ramp in
+                vol = 0.7 + progress * 2.0  # ramp in
             else:
-                vol = 1.0 - progress * 0.35  # gentle fade out (exhale running out)
-            vol = max(vol, 0.4)
+                vol = 1.0 - progress * 0.3  # gentle exhale fadeout
+            vol = max(vol, 0.5)
 
             end = min(pos + len(speech), total_samples)
             actual_len = end - pos
