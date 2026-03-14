@@ -69,7 +69,8 @@ h1 {
   min-height: 60px;
   text-align: center;
   color: #a080d0;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
   line-height: 1.6;
 }
 .digit-display .current {
@@ -804,10 +805,10 @@ function highlightDigit(idx) {
   requestAnimationFrame(() => {
     const display = document.getElementById('digitDisplay');
     // Show a window of digits around current position
-    const windowBefore = 20;
-    const windowAfter = 15;
+    const totalWindow = 15;
+    const windowBefore = 7;
     const start = Math.max(0, idx - windowBefore);
-    const end = Math.min(PI_STR.length, idx + windowAfter);
+    const end = Math.min(PI_STR.length, start + totalWindow);
 
     let html = '';
     for (let i = start; i < end; i++) {
@@ -954,7 +955,9 @@ function stopPlayback() {
   document.body.classList.remove('playing');
   document.getElementById('status').textContent = 'Press PLAY to begin the infinite digits of \u03C0';
   document.getElementById('digitDisplay').innerHTML =
-    '<span class="dim">3</span><span class="dot dim">.</span><span class="dim">1 4 1 5 9 2 6 5 3 5 ...</span>';
+    PI_STR.slice(0, 15).split('').map(ch =>
+      ch === '.' ? '<span class="dot dim">. </span>' : `<span class="dim">${ch} </span>`
+    ).join('') + '<span class="dim">...</span>';
 }
 
 // Hide loading on start
