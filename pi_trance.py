@@ -8,10 +8,9 @@ Generates a psy-trance beat (kick + bass) with spoken digits of Pi.
 import numpy as np
 from scipy.io import wavfile
 from pydub import AudioSegment
+from pydub.effects import speedup
 from gtts import gTTS
-import tempfile
 import os
-import struct
 import io
 
 # === PARAMETERS ===
@@ -122,28 +121,70 @@ def generate_hihat(duration_sec=0.05, sample_rate=SAMPLE_RATE):
     return hihat * 0.15
 
 
-def text_to_speech_digit(digit_char):
-    """Generate TTS audio for a single Pi digit in English."""
+def generate_tts_digits():
+    """Generate all 10 digit TTS samples, normalized to equal duration with same pitch."""
     digit_words = {
         '0': 'zero', '1': 'one', '2': 'two', '3': 'three',
         '4': 'four', '5': 'five', '6': 'six', '7': 'seven',
         '8': 'eight', '9': 'nine'
     }
-    word = digit_words.get(digit_char, digit_char)
 
-    tts = gTTS(text=word, lang='en', slow=False)
-    buf = io.BytesIO()
-    tts.write_to_fp(buf)
-    buf.seek(0)
+    # Step 1: Generate raw TTS for all 10 digits
+    raw_segments = {}
+    for d, word in digit_words.items():
+        tts = gTTS(text=word, lang='en', slow=False)
+        buf = io.BytesIO()
+        tts.write_to_fp(buf)
+        buf.seek(0)
+        audio = AudioSegment.from_mp3(buf)
+        audio = audio.set_frame_rate(SAMPLE_RATE).set_channels(1)
+        # Strip silence from start and end
+        audio = _strip_silence(audio)
+        raw_segments[d] = audio
+        print(f"    TTS '{word}': {len(audio)}ms")
 
-    audio = AudioSegment.from_mp3(buf)
-    audio = audio.set_frame_rate(SAMPLE_RATE).set_channels(1)
+    # Step 2: Find shortest duration and target all to that length
+    min_dur = min(len(seg) for seg in raw_segments.values())
+    # Use a fixed target: slightly shorter than the shortest for snappiness
+    target_ms = max(min_dur, 200)  # at least 200ms
+    print(f"    Target duration: {target_ms}ms")
 
-    # Convert to numpy
-    samples = np.array(audio.get_array_of_samples(), dtype=np.float64)
-    samples = samples / 32768.0  # normalize to [-1, 1]
+    # Step 3: Speed up longer samples (preserving pitch) to match target
+    normalized = {}
+    for d, seg in raw_segments.items():
+        if len(seg) > target_ms + 30:  # needs speedup
+            ratio = len(seg) / target_ms
+            seg = speedup(seg, playback_speed=ratio, chunk_size=50, crossfade=25)
+        # Hard-trim to exact target + apply fade out
+        seg = seg[:target_ms]
+        seg = seg.fade_out(30)
+        # Pad if slightly shorter
+        if len(seg) < target_ms:
+            seg = seg + AudioSegment.silent(duration=target_ms - len(seg),
+                                            frame_rate=SAMPLE_RATE)
+        # Convert to numpy
+        samples = np.array(seg.get_array_of_samples(), dtype=np.float64)
+        samples = samples / 32768.0
+        normalized[d] = samples
 
-    return samples
+    return normalized
+
+
+def _strip_silence(audio, silence_thresh=-40, chunk_size=10):
+    """Strip leading and trailing silence from an AudioSegment."""
+    # Find start
+    start = 0
+    for i in range(0, len(audio), chunk_size):
+        if audio[i:i + chunk_size].dBFS > silence_thresh:
+            start = max(0, i - chunk_size)
+            break
+    # Find end
+    end = len(audio)
+    for i in range(len(audio) - chunk_size, 0, -chunk_size):
+        if audio[i:i + chunk_size].dBFS > silence_thresh:
+            end = min(len(audio), i + 2 * chunk_size)
+            break
+    return audio[start:end]
 
 
 def main():
@@ -185,26 +226,16 @@ def main():
         bass = generate_bassline(bar, actual_bar_samples)
         mix[bar_start:bar_end] += bass[:actual_bar_samples]
 
-    # === TTS Pi digits — one every 2 beats ===
-    print("Generating Pi digit speech...")
+    # === TTS Pi digits — one every 2 beats, all same duration ===
+    print("Generating Pi digit speech (normalized)...")
+    tts_digits = generate_tts_digits()
     half_bar_sec = beat_duration_sec * 2  # interval between digits
-    # Cache TTS to avoid re-generating the same digit
-    tts_cache = {}
+
     for i, digit in enumerate(PI_DIGITS):
-        if i % 16 == 0:
-            print(f"  Digits {i + 1}-{min(i + 16, len(PI_DIGITS))} of {len(PI_DIGITS)}...")
+        speech = tts_digits[digit]
 
-        if digit not in tts_cache:
-            tts_cache[digit] = text_to_speech_digit(digit)
-        speech = tts_cache[digit].copy()
-
-        # Position: every 2 beats, offset by half a beat
+        # Position: every 2 beats, offset slightly after the kick
         pos = int(i * half_bar_sec * SAMPLE_RATE + beat_duration_sec * SAMPLE_RATE * 0.3)
-
-        # Trim if speech is too long for the slot
-        max_len = int(half_bar_sec * SAMPLE_RATE * 0.85)
-        if len(speech) > max_len:
-            speech = speech[:max_len]
 
         end = min(pos + len(speech), total_samples)
         actual_len = end - pos
