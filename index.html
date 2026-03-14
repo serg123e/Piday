@@ -379,7 +379,7 @@ h1 {
     </div>
     <div class="slider-row">
       <span class="slider-label">Filter</span>
-      <input type="range" min="200" max="5000" value="1800" id="slFilter" oninput="updateSlider('filter')">
+      <input type="range" min="200" max="3000" value="1800" id="slFilter" oninput="updateSlider('filter')">
       <span class="slider-value" id="valFilter">1800 Hz</span>
     </div>
     <div class="slider-row">
@@ -505,6 +505,9 @@ let digitInPhrase = 0;
 let piIndex = 0; // index into PI_STR (skip "3.")
 let displayedDigits = [];
 let phraseCount = 0;
+
+// Master filter node
+let masterFilter = null;
 
 // Channel gain nodes
 const channels = {};
@@ -696,7 +699,7 @@ function regenerateParams() {
   params.bpm = 120 + Math.floor(Math.random() * 45); // 120-164
   params.digitsPerPhrase = 3 + Math.floor(Math.random() * 6); // 3-8
   params.restBeats = 3 + Math.floor(Math.random() * 8); // 3-10
-  params.filterMax = 600 + Math.floor(Math.random() * 3800); // 600-4400
+  params.filterMax = 200 + Math.floor(Math.random() * 2800); // 200-3000
   params.voxVol = 0.35 + Math.random() * 0.35; // 0.35-0.70
   params.kickPitch = 100 + Math.floor(Math.random() * 160); // 100-260
   params.bassQ = 0.3 + Math.random() * 3.0; // 0.3-3.3
@@ -1051,7 +1054,7 @@ function scheduleBar(startTime) {
   const beatDur = 60.0 / params.bpm;
   const sixteenthDur = beatDur / 4;
   const progress = Math.min(barCount / 64, 1); // normalize to ~64 bars
-  const filterCutoff = 300 + progress * (params.filterMax - 300);
+  const filterCutoff = params.filterMax;
 
   // KICK on every beat
   for (let beat = 0; beat < 4; beat++) {
@@ -1284,6 +1287,10 @@ function updateSlider(name) {
     case 'filter':
       params.filterMax = parseInt(document.getElementById('slFilter').value);
       document.getElementById('valFilter').textContent = params.filterMax + ' Hz';
+      if (masterFilter) {
+        masterFilter.frequency.value = params.filterMax;
+        masterFilter.Q.value = params.filterMax / 300;
+      }
       break;
     case 'vox':
       params.voxVol = parseInt(document.getElementById('slVox').value) / 100;
@@ -1355,6 +1362,15 @@ async function startPlayback() {
     channels[ch].gain.value = channelEnabled[ch] ? 1.0 : 0.0;
     channels[ch].connect(compressor);
   }
+
+  // Bandpass filter on vox channel (controlled by Filter slider)
+  masterFilter = ctx.createBiquadFilter();
+  masterFilter.type = 'bandpass';
+  masterFilter.frequency.value = params.filterMax;
+  masterFilter.Q.value = params.filterMax / 300; // Q = center/bandwidth
+  channels.vox.disconnect();
+  channels.vox.connect(masterFilter);
+  masterFilter.connect(compressor);
 
   // Reset state
   state = 'integer';
