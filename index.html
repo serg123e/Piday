@@ -260,9 +260,7 @@ h1 {
 <div class="container">
   <h1>&pi; Trance</h1>
 
-  <div class="digit-display" id="digitDisplay">
-    <span class="dim">3</span><span class="dot dim">.</span><span class="dim">1 4 1 5 9 2 6 5 3 5 ...</span>
-  </div>
+  <div class="digit-display" id="digitDisplay"></div>
 
   <div class="transport">
     <button id="btnPlay" onclick="togglePlay()">&#9654; PLAY</button>
@@ -330,7 +328,7 @@ h1 {
 // ============================================================
 // Dynamic pi digits - starts with seed, fetches more from API as needed
 let PI_STR = "3.14159265358979323846264338327950288419716939937510";
-let piFetchedTotal = 50; // digits fetched so far (excluding "3.")
+let piFetchedTotal = 51; // API offset: "3" counts as position 0, so 50 digits after decimal = position 51
 let piFetching = false;
 const PI_FETCH_CHUNK = 1000; // fetch 1000 digits at a time
 const PI_PREFETCH_MARGIN = 200; // prefetch when this many digits remain
@@ -954,14 +952,12 @@ function stopPlayback() {
   samplesLoaded = false;
   document.body.classList.remove('playing');
   document.getElementById('status').textContent = 'Press PLAY to begin the infinite digits of \u03C0';
-  document.getElementById('digitDisplay').innerHTML =
-    PI_STR.slice(0, 15).split('').map(ch =>
-      ch === '.' ? '<span class="dot dim">. </span>' : `<span class="dim">${ch} </span>`
-    ).join('') + '<span class="dim">...</span>';
+  highlightDigit(0);
 }
 
 // Hide loading on start
 document.getElementById('loading').classList.add('hidden');
+highlightDigit(-1);
 </script>
 
 <!-- EMBEDDED DIGIT SAMPLES — injected below -->
