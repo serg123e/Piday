@@ -245,7 +245,7 @@ def generate_tts_digits():
         sped_up[d] = (seg_fast, new_stress)
 
     STRESS_TARGET_MS = 80
-    stress_overrides = {'9': -70, '1': -40, '6': -30, '8': -10}
+    stress_overrides = {'9': -60, '1': -40, '6': -40, '8': -10}
     print(f"    Aligning stress to {STRESS_TARGET_MS}ms, target total {target_ms}ms")
 
     normalized = {}
