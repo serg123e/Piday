@@ -9,8 +9,8 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  background: #0a0a0f;
-  color: #e0e0e0;
+  background: #0a100a;
+  color: #33ff33;
   font-family: 'Courier New', monospace;
   min-height: 100vh;
   display: flex;
@@ -27,7 +27,7 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
   font-size: min(80vw, 80vh);
-  color: rgba(100, 60, 200, 0.06);
+  color: rgba(0, 255, 0, 0.06);
   font-family: 'Times New Roman', serif;
   pointer-events: none;
   z-index: 0;
@@ -35,7 +35,7 @@ body {
   transition: color 0.5s;
 }
 body.playing .pi-bg {
-  color: rgba(100, 60, 200, 0.10);
+  color: rgba(0, 255, 0, 0.10);
 }
 
 .container {
@@ -52,7 +52,7 @@ body.playing .pi-bg {
 
 h1 {
   font-size: 1.4em;
-  color: #b080ff;
+  color: #33ff33;
   letter-spacing: 3px;
   text-transform: uppercase;
 }
@@ -60,29 +60,29 @@ h1 {
 /* Digit display */
 .digit-display {
   width: 100%;
-  background: rgba(30, 20, 50, 0.6);
-  border: 1px solid rgba(100, 60, 200, 0.3);
+  background: rgba(0, 20, 0, 0.6);
+  border: 1px solid rgba(0, 255, 0, 0.3);
   border-radius: 8px;
   padding: 16px 20px;
   font-size: 1.5em;
   letter-spacing: 4px;
   min-height: 60px;
   text-align: center;
-  color: #a080d0;
+  color: #20cc20;
   white-space: nowrap;
   overflow: hidden;
   line-height: 1.6;
 }
 .digit-display .current {
   color: #fff;
-  text-shadow: 0 0 12px #b080ff, 0 0 24px #8040cc;
+  text-shadow: 0 0 12px #33ff33, 0 0 24px #00cc00;
   font-weight: bold;
 }
 .digit-display .dot {
-  color: #ff6090;
+  color: #66ff66;
 }
 .digit-display .dim {
-  color: #504070;
+  color: #0a550a;
 }
 
 /* Play/Stop */
@@ -91,9 +91,9 @@ h1 {
   gap: 16px;
 }
 .transport button {
-  background: rgba(100, 60, 200, 0.2);
-  border: 2px solid #8060c0;
-  color: #d0b0ff;
+  background: rgba(0, 255, 0, 0.1);
+  border: 2px solid #1a8a1a;
+  color: #33ff33;
   font-family: inherit;
   font-size: 1.2em;
   padding: 14px 36px;
@@ -103,18 +103,18 @@ h1 {
   letter-spacing: 2px;
 }
 .transport button:hover {
-  background: rgba(100, 60, 200, 0.4);
-  border-color: #b080ff;
+  background: rgba(0, 255, 0, 0.25);
+  border-color: #33ff33;
   color: #fff;
 }
 .transport button:active {
   transform: scale(0.97);
 }
 .transport button.active {
-  background: rgba(100, 60, 200, 0.5);
-  border-color: #c090ff;
+  background: rgba(0, 255, 0, 0.3);
+  border-color: #66ff66;
   color: #fff;
-  box-shadow: 0 0 20px rgba(100, 60, 200, 0.4);
+  box-shadow: 0 0 20px rgba(0, 255, 0, 0.4);
 }
 
 /* Toggle grid */
@@ -126,10 +126,10 @@ h1 {
 }
 .toggle-btn {
   aspect-ratio: 1;
-  background: rgba(30, 20, 50, 0.5);
-  border: 2px solid #403060;
+  background: rgba(0, 20, 0, 0.5);
+  border: 2px solid #0a550a;
   border-radius: 8px;
-  color: #706090;
+  color: #1a8a1a;
   font-family: inherit;
   font-size: 0.75em;
   cursor: pointer;
@@ -145,14 +145,14 @@ h1 {
   font-size: 1.6em;
 }
 .toggle-btn.on {
-  background: rgba(100, 60, 200, 0.25);
-  border-color: #8060c0;
-  color: #c0a0f0;
-  box-shadow: 0 0 12px rgba(100, 60, 200, 0.2);
+  background: rgba(0, 255, 0, 0.15);
+  border-color: #1a8a1a;
+  color: #33ff33;
+  box-shadow: 0 0 12px rgba(0, 255, 0, 0.2);
 }
 .toggle-btn:hover {
-  border-color: #9070d0;
-  color: #b090e0;
+  border-color: #20cc20;
+  color: #33ff33;
 }
 
 /* Sliders */
@@ -171,7 +171,7 @@ h1 {
   width: 100px;
   text-align: right;
   font-size: 0.85em;
-  color: #8070a0;
+  color: #1a8a1a;
   flex-shrink: 0;
 }
 .slider-row input[type="range"] {
@@ -179,7 +179,7 @@ h1 {
   -webkit-appearance: none;
   appearance: none;
   height: 6px;
-  background: #302040;
+  background: #0a200a;
   border-radius: 3px;
   outline: none;
 }
@@ -187,30 +187,30 @@ h1 {
   -webkit-appearance: none;
   width: 18px;
   height: 18px;
-  background: #8060c0;
+  background: #1a8a1a;
   border-radius: 50%;
   cursor: pointer;
-  border: 2px solid #a080e0;
+  border: 2px solid #33ff33;
 }
 .slider-row input[type="range"]::-moz-range-thumb {
   width: 18px;
   height: 18px;
-  background: #8060c0;
+  background: #1a8a1a;
   border-radius: 50%;
   cursor: pointer;
-  border: 2px solid #a080e0;
+  border: 2px solid #33ff33;
 }
 .slider-value {
   width: 60px;
   font-size: 0.9em;
-  color: #b090d0;
+  color: #20cc20;
   text-align: left;
 }
 
 /* Status */
 .status {
   font-size: 0.8em;
-  color: #605080;
+  color: #0a770a;
   text-align: center;
 }
 
@@ -228,15 +228,15 @@ h1 {
 }
 .loading-overlay.hidden { display: none; }
 .loading-text {
-  color: #b080ff;
+  color: #33ff33;
   font-size: 1.2em;
   letter-spacing: 2px;
 }
 .loading-spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid #302050;
-  border-top-color: #b080ff;
+  border: 3px solid #0a300a;
+  border-top-color: #33ff33;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -320,7 +320,7 @@ h1 {
 
   <div class="status" id="status">Press PLAY to begin the infinite digits of &pi;</div>
   <footer style="margin-top:32px;padding:16px;opacity:0.5;font-size:13px">
-    <a href="https://github.com/serg123e/Piday/" target="_blank" rel="noopener" style="color:#b090ff;text-decoration:none">GitHub</a>
+    <a href="https://github.com/serg123e/Piday/" target="_blank" rel="noopener" style="color:#33ff33;text-decoration:none">GitHub</a>
   </footer>
 </div>
 
