@@ -3,7 +3,7 @@
 Pi Day Psy-Trance Generator
 Generates a psy-trance beat (kick + bass) with spoken digits of Pi.
 64 bars, groups of 5 decimal digits with breathing pauses.
-Evolving trance effects: risers, crashes, filter sweeps, pads.
+Evolving trance effects: risers, filter sweeps, pads.
 Output: MP3.
 """
 
@@ -143,18 +143,6 @@ def generate_hihat(duration_sec=0.05, sample_rate=SAMPLE_RATE):
     envelope = np.exp(-t * 80)
     return noise * envelope * 0.15
 
-
-def generate_crash(duration_sec=1.5, sample_rate=SAMPLE_RATE):
-    """Generate a crash cymbal sound."""
-    n_samples = int(duration_sec * sample_rate)
-    t = np.linspace(0, duration_sec, n_samples, endpoint=False)
-    noise = np.random.randn(n_samples)
-    envelope = np.exp(-t * 3)
-    # Band-pass the noise for cymbal character
-    nyq = sample_rate / 2
-    b, a = butter(2, [3000 / nyq, 12000 / nyq], btype='band')
-    crash = lfilter(b, a, noise) * envelope
-    return crash * 0.12
 
 
 def generate_riser(duration_sec, sample_rate=SAMPLE_RATE):
@@ -311,7 +299,7 @@ def main():
     # Pre-generate sounds
     kick = generate_kick()
     hihat = generate_hihat()
-    crash = generate_crash()
+
 
     # Main mix buffer
     mix = np.zeros(total_samples)
@@ -410,18 +398,6 @@ def main():
         actual_len = end - riser_start_sample
         if actual_len > 0:
             mix[riser_start_sample:end] += riser[:actual_len] * riser_vol
-
-    # === CRASH at phrase boundaries (every 4 bars) ===
-    print("Generating crashes...")
-    for phrase in range(1, NUM_PHRASES):
-        progress = phrase / max(NUM_PHRASES - 1, 1)
-        phrase_start_sec = phrase * PHRASE_BEATS * beat_duration_sec
-        pos = int(phrase_start_sec * SAMPLE_RATE)
-
-        crash_vol = 0.6 + progress * 0.4
-        end = min(pos + len(crash), total_samples)
-        if end > pos:
-            mix[pos:end] += crash[:end - pos] * crash_vol
 
     # === TTS Pi digits ===
     # Phrase 0: just "3" (integer part), centered in the phrase
