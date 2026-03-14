@@ -2,7 +2,7 @@
 """
 Pi Day Psy-Trance Generator
 Generates a psy-trance beat (kick + bass) with spoken digits of Pi.
-64 bars, one digit every 2 beats. Output: MP3.
+64 bars, one digit per beat, phrased in exhale/inhale groups. Output: MP3.
 """
 
 import numpy as np
@@ -19,13 +19,23 @@ SAMPLE_RATE = 44100
 BARS = 64
 BEATS_PER_BAR = 4
 TOTAL_BEATS = BARS * BEATS_PER_BAR
-DIGITS_PER_BAR = 2  # one digit every 2 beats
 
-# Pi digits: 3.14159265358979323846...
-# 64 bars x 2 digits per bar = 128 digits
-PI_DIGITS = "31415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679"
-PI_DIGITS += "82148086513282306647093844609550582231725359"
-PI_DIGITS = PI_DIGITS[:BARS * DIGITS_PER_BAR]  # 128 digits
+# Phrasing: speak digits for PHRASE_SPEAK bars, rest for PHRASE_REST bars
+PHRASE_SPEAK_BARS = 3   # 3 bars of digits (12 digits at 1/beat)
+PHRASE_REST_BARS = 1    # 1 bar pause ("inhale")
+PHRASE_BARS = PHRASE_SPEAK_BARS + PHRASE_REST_BARS  # 4-bar phrase cycle
+NUM_PHRASES = BARS // PHRASE_BARS  # 16 phrases
+DIGITS_PER_PHRASE = PHRASE_SPEAK_BARS * BEATS_PER_BAR  # 12 digits per phrase
+TOTAL_DIGITS = NUM_PHRASES * DIGITS_PER_PHRASE  # 192 digits
+
+# Pi digits — 192+ digits
+PI_DIGITS = (
+    "31415926535897932384626433832795028841971693993751"
+    "05820974944592307816406286208998628034825342117067"
+    "98214808651328230664709384460955058223172535940812"
+    "84811174502841027019385211055596446229489549303819"
+)
+PI_DIGITS = PI_DIGITS[:TOTAL_DIGITS]
 
 # Timing
 beat_duration_sec = 60.0 / BPM
@@ -143,10 +153,9 @@ def generate_tts_digits():
         raw_segments[d] = audio
         print(f"    TTS '{word}': {len(audio)}ms")
 
-    # Step 2: Find shortest duration and target all to that length
-    min_dur = min(len(seg) for seg in raw_segments.values())
-    # Use a fixed target: slightly shorter than the shortest for snappiness
-    target_ms = max(min_dur, 200)  # at least 200ms
+    # Step 2: Target duration — fits within one beat with room to breathe
+    # At 140 BPM, one beat = ~428ms. Target ~250ms for snappy delivery.
+    target_ms = 250
     print(f"    Target duration: {target_ms}ms")
 
     # Step 3: Speed up longer samples (preserving pitch) to match target
@@ -226,21 +235,44 @@ def main():
         bass = generate_bassline(bar, actual_bar_samples)
         mix[bar_start:bar_end] += bass[:actual_bar_samples]
 
-    # === TTS Pi digits — one every 2 beats, all same duration ===
-    print("Generating Pi digit speech (normalized)...")
+    # === TTS Pi digits — one per beat, with phrase breathing ===
+    # Pattern: 3 bars speak (12 digits) + 1 bar rest, in 4-bar phrases
+    # Volume envelope per phrase simulates exhale (loud→fade) then silence (inhale)
+    print("Generating Pi digit speech (phrased)...")
     tts_digits = generate_tts_digits()
-    half_bar_sec = beat_duration_sec * 2  # interval between digits
 
-    for i, digit in enumerate(PI_DIGITS):
-        speech = tts_digits[digit]
+    digit_index = 0
+    for phrase in range(NUM_PHRASES):
+        phrase_start_sec = phrase * PHRASE_BARS * bar_duration_sec
 
-        # Position: every 2 beats, offset slightly after the kick
-        pos = int(i * half_bar_sec * SAMPLE_RATE + beat_duration_sec * SAMPLE_RATE * 0.3)
+        for d in range(DIGITS_PER_PHRASE):
+            if digit_index >= len(PI_DIGITS):
+                break
+            digit = PI_DIGITS[digit_index]
+            speech = tts_digits[digit].copy()
 
-        end = min(pos + len(speech), total_samples)
-        actual_len = end - pos
-        if actual_len > 0:
-            mix[pos:pos + actual_len] += speech[:actual_len] * 0.9
+            # Position within phrase: one digit per beat
+            digit_time = phrase_start_sec + d * beat_duration_sec
+            pos = int(digit_time * SAMPLE_RATE + beat_duration_sec * SAMPLE_RATE * 0.15)
+
+            # Exhale envelope: starts strong, gently fades toward end of phrase
+            # d goes 0..11, progress 0.0..1.0
+            progress = d / max(DIGITS_PER_PHRASE - 1, 1)
+            # Slight ramp up at start (first 2 digits), then gradual fade
+            if progress < 0.15:
+                vol = 0.6 + progress * 2.5  # ramp in
+            else:
+                vol = 1.0 - progress * 0.35  # gentle fade out (exhale running out)
+            vol = max(vol, 0.4)
+
+            end = min(pos + len(speech), total_samples)
+            actual_len = end - pos
+            if actual_len > 0:
+                mix[pos:pos + actual_len] += speech[:actual_len] * 0.9 * vol
+
+            digit_index += 1
+
+    print(f"    Placed {digit_index} digits in {NUM_PHRASES} phrases")
 
     # === Normalize ===
     print("Mixing and normalizing...")
