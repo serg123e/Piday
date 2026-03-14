@@ -384,8 +384,8 @@ h1 {
     </div>
     <div class="slider-row">
       <span class="slider-label">Voice Vol</span>
-      <input type="range" min="0" max="100" value="90" id="slVox" oninput="updateSlider('vox')">
-      <span class="slider-value" id="valVox">90%</span>
+      <input type="range" min="0" max="100" value="63" id="slVox" oninput="updateSlider('vox')">
+      <span class="slider-value" id="valVox">63%</span>
     </div>
   </div>
 
@@ -409,6 +409,16 @@ h1 {
       <span class="slider-label">Riser Q</span>
       <input type="range" min="5" max="80" value="30" id="slRiserQ" oninput="updateSlider('riserQ')">
       <span class="slider-value" id="valRiserQ">3.0</span>
+    </div>
+    <div class="slider-row">
+      <span class="slider-label">Flanger Rate</span>
+      <input type="range" min="0" max="20" value="0" id="slFlangerRate" oninput="updateSlider('flangerRate')">
+      <span class="slider-value" id="valFlangerRate">OFF</span>
+    </div>
+    <div class="slider-row">
+      <span class="slider-label">Flanger Depth</span>
+      <input type="range" min="0" max="80" value="0" id="slFlangerDepth" oninput="updateSlider('flangerDepth')">
+      <span class="slider-value" id="valFlangerDepth">OFF</span>
     </div>
     <div class="tonality-row">
       <span class="slider-label">Tonality</span>
@@ -506,12 +516,14 @@ let params = {
   digitsPerPhrase: 5,
   restBeats: 6,
   filterMax: 1800,
-  voxVol: 0.9,
+  voxVol: 0.63,
   kickPitch: 160,
   bassQ: 0.7,
   padLfo: 0.25,
   riserQ: 3.0,
-  tonality: 0
+  tonality: 0,
+  flangerRate: 0.0,  // 0 = off, 0.1-2.0 Hz
+  flangerDepth: 0.0  // 0 = off, 0.1-8.0 ms
 };
 
 // Tonality presets: [bassEven, bassOdd, padEven, padOdd]
@@ -565,7 +577,7 @@ const TONALITIES = [
 // 11: checksum    (XOR of bytes 0-10)
 
 function encodeParams() {
-  const bytes = new Uint8Array(12);
+  const bytes = new Uint8Array(14);
   bytes[0] = Math.round(params.bpm - 100);
   bytes[1] = Math.round(params.digitsPerPhrase - 3);
   bytes[2] = Math.round(params.restBeats - 2);
@@ -582,10 +594,12 @@ function encodeParams() {
   bytes[8] = Math.round(params.padLfo * 100);
   bytes[9] = Math.round(params.riserQ * 10);
   bytes[10] = params.tonality;
+  bytes[11] = Math.round(params.flangerRate * 10);  // 0-20
+  bytes[12] = Math.round(params.flangerDepth * 10); // 0-80
   // Checksum
   let xor = 0;
-  for (let i = 0; i < 11; i++) xor ^= bytes[i];
-  bytes[11] = xor;
+  for (let i = 0; i < 13; i++) xor ^= bytes[i];
+  bytes[13] = xor;
 
   // Base64url encode
   let binary = '';
@@ -599,14 +613,16 @@ function decodeParams(str) {
     str = str.replace(/-/g, '+').replace(/_/g, '/');
     while (str.length % 4) str += '=';
     const binary = atob(str);
-    if (binary.length !== 12) return false;
+    // Support both v1 (12 bytes) and v2 (14 bytes) formats
+    if (binary.length !== 12 && binary.length !== 14) return false;
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
-    // Verify checksum
+    // Verify checksum (last byte XOR of all preceding)
+    const dataLen = binary.length - 1;
     let xor = 0;
-    for (let i = 0; i < 11; i++) xor ^= bytes[i];
-    if (xor !== bytes[11]) return false;
+    for (let i = 0; i < dataLen; i++) xor ^= bytes[i];
+    if (xor !== bytes[dataLen]) return false;
 
     params.bpm = bytes[0] + 100;
     params.digitsPerPhrase = bytes[1] + 3;
@@ -624,6 +640,11 @@ function decodeParams(str) {
     params.padLfo = bytes[8] / 100;
     params.riserQ = bytes[9] / 10;
     params.tonality = Math.min(bytes[10], 3);
+    // v2 fields (flanger)
+    if (binary.length >= 14) {
+      params.flangerRate = bytes[11] / 10;
+      params.flangerDepth = bytes[12] / 10;
+    }
     return true;
   } catch (e) {
     return false;
@@ -649,6 +670,10 @@ function syncUIFromParams() {
   document.getElementById('valPadLfo').textContent = params.padLfo.toFixed(2) + ' Hz';
   document.getElementById('slRiserQ').value = Math.round(params.riserQ * 10);
   document.getElementById('valRiserQ').textContent = params.riserQ.toFixed(1);
+  document.getElementById('slFlangerRate').value = Math.round(params.flangerRate * 10);
+  document.getElementById('valFlangerRate').textContent = params.flangerRate === 0 ? 'OFF' : params.flangerRate.toFixed(1) + ' Hz';
+  document.getElementById('slFlangerDepth').value = Math.round(params.flangerDepth * 10);
+  document.getElementById('valFlangerDepth').textContent = params.flangerDepth === 0 ? 'OFF' : params.flangerDepth.toFixed(1) + ' ms';
 
   // Channel toggles
   for (const ch of ['kick', 'bass', 'hihat', 'pad', 'riser', 'vox']) {
@@ -669,12 +694,20 @@ function regenerateParams() {
   params.digitsPerPhrase = 3 + Math.floor(Math.random() * 6); // 3-8
   params.restBeats = 3 + Math.floor(Math.random() * 8); // 3-10
   params.filterMax = 600 + Math.floor(Math.random() * 3800); // 600-4400
-  params.voxVol = 0.5 + Math.random() * 0.5; // 0.5-1.0
+  params.voxVol = 0.35 + Math.random() * 0.35; // 0.35-0.70
   params.kickPitch = 100 + Math.floor(Math.random() * 160); // 100-260
   params.bassQ = 0.3 + Math.random() * 3.0; // 0.3-3.3
   params.padLfo = 0.05 + Math.random() * 0.45; // 0.05-0.50
   params.riserQ = 1.0 + Math.random() * 6.0; // 1.0-7.0
   params.tonality = Math.floor(Math.random() * 4);
+  // Flanger: 50% chance on, musical rates
+  if (Math.random() > 0.5) {
+    params.flangerRate = 0.2 + Math.random() * 1.3; // 0.2-1.5 Hz
+    params.flangerDepth = 1.0 + Math.random() * 5.0; // 1.0-6.0 ms
+  } else {
+    params.flangerRate = 0.0;
+    params.flangerDepth = 0.0;
+  }
 
   // Randomize channels — keep kick and bass always on, others random
   channelEnabled.kick = true;
@@ -926,7 +959,7 @@ function playRiser(time, duration) {
   filter.Q.value = params.riserQ;
 
   const gain = ctx.createGain();
-  gain.gain.value = 0.15;
+  gain.gain.value = 0.105; // 30% quieter than original 0.15
 
   src.connect(filter).connect(gain).connect(channels.riser);
   src.start(time);
@@ -940,9 +973,51 @@ function playDigitSample(time, digit) {
   src.buffer = digitBuffers[digit];
   const gain = ctx.createGain();
   gain.gain.value = params.voxVol;
-  src.connect(gain).connect(channels.vox);
-  src.start(time);
-  cleanupOnEnd(src, [src, gain]);
+  const duration = src.buffer.duration;
+
+  if (params.flangerRate > 0 && params.flangerDepth > 0) {
+    // Flanger: dry + modulated-delay wet signal
+    // LFO rate is harmonized with tonality root: flangerRate × subdivision
+    const t = TONALITIES[params.tonality] || TONALITIES[0];
+    const rootFreq = bassPhraseEven ? t.bassEven[0] : t.bassOdd[0];
+    // Musical rate: base rate × (rootFreq / reference), quantized to feel musical
+    const musicalRate = params.flangerRate * (rootFreq / 41.20);
+    const depthSec = params.flangerDepth / 1000; // ms → seconds
+
+    const dry = ctx.createGain();
+    dry.gain.value = 0.7;
+    const wet = ctx.createGain();
+    wet.gain.value = 0.5;
+
+    const delay = ctx.createDelay(0.02);
+    delay.delayTime.value = depthSec * 0.5; // center delay
+
+    // LFO modulates delay time
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = musicalRate;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = depthSec * 0.5; // modulation depth
+    lfo.connect(lfoGain).connect(delay.delayTime);
+
+    // Light feedback for richer flange
+    const feedback = ctx.createGain();
+    feedback.gain.value = 0.3;
+    delay.connect(feedback).connect(delay);
+
+    src.connect(gain);
+    gain.connect(dry).connect(channels.vox);
+    gain.connect(delay).connect(wet).connect(channels.vox);
+
+    lfo.start(time);
+    lfo.stop(time + duration + 0.1);
+    src.start(time);
+    cleanupOnEnd(src, [src, gain, dry, wet, delay, lfo, lfoGain, feedback]);
+  } else {
+    src.connect(gain).connect(channels.vox);
+    src.start(time);
+    cleanupOnEnd(src, [src, gain]);
+  }
 }
 
 // ============================================================
@@ -1227,6 +1302,14 @@ function updateSlider(name) {
     case 'riserQ':
       params.riserQ = parseInt(document.getElementById('slRiserQ').value) / 10;
       document.getElementById('valRiserQ').textContent = params.riserQ.toFixed(1);
+      break;
+    case 'flangerRate':
+      params.flangerRate = parseInt(document.getElementById('slFlangerRate').value) / 10;
+      document.getElementById('valFlangerRate').textContent = params.flangerRate === 0 ? 'OFF' : params.flangerRate.toFixed(1) + ' Hz';
+      break;
+    case 'flangerDepth':
+      params.flangerDepth = parseInt(document.getElementById('slFlangerDepth').value) / 10;
+      document.getElementById('valFlangerDepth').textContent = params.flangerDepth === 0 ? 'OFF' : params.flangerDepth.toFixed(1) + ' ms';
       break;
   }
 }
