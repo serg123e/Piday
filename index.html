@@ -364,7 +364,7 @@ h1 {
   <div class="sliders">
     <div class="slider-row">
       <span class="slider-label">BPM</span>
-      <input type="range" min="100" max="180" value="140" id="slBpm" oninput="updateSlider('bpm')">
+      <input type="range" min="100" max="240" value="140" id="slBpm" oninput="updateSlider('bpm')">
       <span class="slider-value" id="valBpm">140</span>
     </div>
     <div class="slider-row">
@@ -561,45 +561,51 @@ const TONALITIES = [
 // ============================================================
 //  URL PARAMETER ENCODING/DECODING
 // ============================================================
-// Encodes all params + channel toggles into a compact base64 hash.
-// Layout: 12 bytes → ~16 chars base64
-//  0: bpm         (100-180 → 0-80)
-//  1: digitsPerPhrase (3-8 → 0-5)
-//  2: restBeats   (2-12 → 0-10)
-//  3: filterMax   (200-5000 → 0-240, step 20)
-//  4: voxVol      (0-100 → 0-100)
-//  5: channels    (6 bits: kick,bass,hihat,pad,riser,vox)
-//  6: kickPitch   (80-300 → 0-220)
-//  7: bassQ       (1-50 → 0-49, actual = val/10)
-//  8: padLfo      (1-20 → 0-19, displayed as val/4 + some offset)
-//  9: riserQ      (5-80 → 0-75, actual = val/10)
-// 10: tonality    (0-3)
-// 11: checksum    (XOR of bytes 0-10)
+// Encodes all params + channel toggles into a compact base64url hash.
+// v1 format — 15 bytes → 20 chars base64url
+//  0: version     (1)
+//  1: bpm         (100-240 → 0-140)
+//  2: digitsPerPhrase (3-8 → 0-5)
+//  3: restBeats   (2-12 → 0-10)
+//  4: filterMax   (200-5000 → 0-240, step 20)
+//  5: voxVol      (0-100 → 0-100)
+//  6: channels    (6 bits: kick,bass,hihat,pad,riser,vox)
+//  7: kickPitch   (80-300 → 0-220)
+//  8: bassQ       (1-50, actual = val/10)
+//  9: padLfo      (5-100, actual = val/100)
+// 10: riserQ      (5-80, actual = val/10)
+// 11: tonality    (0-3)
+// 12: flangerRate (0-20, actual = val/10)
+// 13: flangerDepth(0-80, actual = val/10)
+// 14: checksum    (XOR of bytes 0-13)
+
+const PARAMS_VERSION = 1;
 
 function encodeParams() {
-  const bytes = new Uint8Array(14);
-  bytes[0] = Math.round(params.bpm - 100);
-  bytes[1] = Math.round(params.digitsPerPhrase - 3);
-  bytes[2] = Math.round(params.restBeats - 2);
-  bytes[3] = Math.round((params.filterMax - 200) / 20);
-  bytes[4] = Math.round(params.voxVol * 100);
-  bytes[5] = (channelEnabled.kick ? 1 : 0) |
+  const bytes = new Uint8Array(15);
+  bytes[0] = PARAMS_VERSION;
+  bytes[1] = Math.round(params.bpm - 100);
+  bytes[2] = Math.round(params.digitsPerPhrase - 3);
+  bytes[3] = Math.round(params.restBeats - 2);
+  bytes[4] = Math.round((params.filterMax - 200) / 20);
+  bytes[5] = Math.round(params.voxVol * 100);
+  bytes[6] = (channelEnabled.kick ? 1 : 0) |
              (channelEnabled.bass ? 2 : 0) |
              (channelEnabled.hihat ? 4 : 0) |
              (channelEnabled.pad ? 8 : 0) |
              (channelEnabled.riser ? 16 : 0) |
              (channelEnabled.vox ? 32 : 0);
-  bytes[6] = Math.round(params.kickPitch - 80);
-  bytes[7] = Math.round(params.bassQ * 10);
-  bytes[8] = Math.round(params.padLfo * 100);
-  bytes[9] = Math.round(params.riserQ * 10);
-  bytes[10] = params.tonality;
-  bytes[11] = Math.round(params.flangerRate * 10);  // 0-20
-  bytes[12] = Math.round(params.flangerDepth * 10); // 0-80
+  bytes[7] = Math.round(params.kickPitch - 80);
+  bytes[8] = Math.round(params.bassQ * 10);
+  bytes[9] = Math.round(params.padLfo * 100);
+  bytes[10] = Math.round(params.riserQ * 10);
+  bytes[11] = params.tonality;
+  bytes[12] = Math.round(params.flangerRate * 10);
+  bytes[13] = Math.round(params.flangerDepth * 10);
   // Checksum
   let xor = 0;
-  for (let i = 0; i < 13; i++) xor ^= bytes[i];
-  bytes[13] = xor;
+  for (let i = 0; i < 14; i++) xor ^= bytes[i];
+  bytes[14] = xor;
 
   // Base64url encode
   let binary = '';
@@ -613,38 +619,35 @@ function decodeParams(str) {
     str = str.replace(/-/g, '+').replace(/_/g, '/');
     while (str.length % 4) str += '=';
     const binary = atob(str);
-    // Support both v1 (12 bytes) and v2 (14 bytes) formats
-    if (binary.length !== 12 && binary.length !== 14) return false;
+    if (binary.length < 15) return false;
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
-    // Verify checksum (last byte XOR of all preceding)
-    const dataLen = binary.length - 1;
-    let xor = 0;
-    for (let i = 0; i < dataLen; i++) xor ^= bytes[i];
-    if (xor !== bytes[dataLen]) return false;
+    if (bytes[0] !== PARAMS_VERSION) return false;
 
-    params.bpm = bytes[0] + 100;
-    params.digitsPerPhrase = bytes[1] + 3;
-    params.restBeats = bytes[2] + 2;
-    params.filterMax = bytes[3] * 20 + 200;
-    params.voxVol = bytes[4] / 100;
-    channelEnabled.kick = !!(bytes[5] & 1);
-    channelEnabled.bass = !!(bytes[5] & 2);
-    channelEnabled.hihat = !!(bytes[5] & 4);
-    channelEnabled.pad = !!(bytes[5] & 8);
-    channelEnabled.riser = !!(bytes[5] & 16);
-    channelEnabled.vox = !!(bytes[5] & 32);
-    params.kickPitch = bytes[6] + 80;
-    params.bassQ = bytes[7] / 10;
-    params.padLfo = bytes[8] / 100;
-    params.riserQ = bytes[9] / 10;
-    params.tonality = Math.min(bytes[10], 3);
-    // v2 fields (flanger)
-    if (binary.length >= 14) {
-      params.flangerRate = bytes[11] / 10;
-      params.flangerDepth = bytes[12] / 10;
-    }
+    // Verify checksum (last byte XOR of all preceding)
+    let xor = 0;
+    for (let i = 0; i < 14; i++) xor ^= bytes[i];
+    if (xor !== bytes[14]) return false;
+
+    params.bpm = Math.min(bytes[1] + 100, 240);
+    params.digitsPerPhrase = bytes[2] + 3;
+    params.restBeats = bytes[3] + 2;
+    params.filterMax = bytes[4] * 20 + 200;
+    params.voxVol = bytes[5] / 100;
+    channelEnabled.kick = !!(bytes[6] & 1);
+    channelEnabled.bass = !!(bytes[6] & 2);
+    channelEnabled.hihat = !!(bytes[6] & 4);
+    channelEnabled.pad = !!(bytes[6] & 8);
+    channelEnabled.riser = !!(bytes[6] & 16);
+    channelEnabled.vox = !!(bytes[6] & 32);
+    params.kickPitch = bytes[7] + 80;
+    params.bassQ = bytes[8] / 10;
+    params.padLfo = bytes[9] / 100;
+    params.riserQ = bytes[10] / 10;
+    params.tonality = Math.min(bytes[11], 3);
+    params.flangerRate = bytes[12] / 10;
+    params.flangerDepth = bytes[13] / 10;
     return true;
   } catch (e) {
     return false;
