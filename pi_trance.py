@@ -2,7 +2,7 @@
 """
 Pi Day Psy-Trance Generator
 Generates a psy-trance beat (kick + bass) with spoken digits of Pi.
-16 bars, one digit per bar. Output: MP3.
+64 bars, one digit every 2 beats. Output: MP3.
 """
 
 import numpy as np
@@ -17,12 +17,16 @@ import io
 # === PARAMETERS ===
 BPM = 140
 SAMPLE_RATE = 44100
-BARS = 16
+BARS = 64
 BEATS_PER_BAR = 4
 TOTAL_BEATS = BARS * BEATS_PER_BAR
+DIGITS_PER_BAR = 2  # one digit every 2 beats
 
-# Pi digits: 3 . 1415926535897932...
-PI_DIGITS = "3141592653589793"  # 16 digits (including the leading 3)
+# Pi digits: 3.14159265358979323846...
+# 64 bars x 2 digits per bar = 128 digits
+PI_DIGITS = "31415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679"
+PI_DIGITS += "82148086513282306647093844609550582231725359"
+PI_DIGITS = PI_DIGITS[:BARS * DIGITS_PER_BAR]  # 128 digits
 
 # Timing
 beat_duration_sec = 60.0 / BPM
@@ -119,15 +123,15 @@ def generate_hihat(duration_sec=0.05, sample_rate=SAMPLE_RATE):
 
 
 def text_to_speech_digit(digit_char):
-    """Generate TTS audio for a single Pi digit in Russian."""
+    """Generate TTS audio for a single Pi digit in English."""
     digit_words = {
-        '0': 'ноль', '1': 'один', '2': 'два', '3': 'три',
-        '4': 'четыре', '5': 'пять', '6': 'шесть', '7': 'семь',
-        '8': 'восемь', '9': 'девять'
+        '0': 'zero', '1': 'one', '2': 'two', '3': 'three',
+        '4': 'four', '5': 'five', '6': 'six', '7': 'seven',
+        '8': 'eight', '9': 'nine'
     }
     word = digit_words.get(digit_char, digit_char)
 
-    tts = gTTS(text=word, lang='ru', slow=False)
+    tts = gTTS(text=word, lang='en', slow=False)
     buf = io.BytesIO()
     tts.write_to_fp(buf)
     buf.seek(0)
@@ -181,19 +185,24 @@ def main():
         bass = generate_bassline(bar, actual_bar_samples)
         mix[bar_start:bar_end] += bass[:actual_bar_samples]
 
-    # === TTS Pi digits — one per bar ===
+    # === TTS Pi digits — one every 2 beats ===
     print("Generating Pi digit speech...")
+    half_bar_sec = beat_duration_sec * 2  # interval between digits
+    # Cache TTS to avoid re-generating the same digit
+    tts_cache = {}
     for i, digit in enumerate(PI_DIGITS):
-        print(f"  Bar {i + 1}: digit '{digit}'")
-        speech = text_to_speech_digit(digit)
+        if i % 16 == 0:
+            print(f"  Digits {i + 1}-{min(i + 16, len(PI_DIGITS))} of {len(PI_DIGITS)}...")
 
-        # Place speech starting at beat 2 of each bar (after the first kick)
-        bar_start = int(i * bar_duration_sec * SAMPLE_RATE)
-        speech_offset = int(beat_duration_sec * SAMPLE_RATE * 0.5)  # half beat in
-        pos = bar_start + speech_offset
+        if digit not in tts_cache:
+            tts_cache[digit] = text_to_speech_digit(digit)
+        speech = tts_cache[digit].copy()
 
-        # Trim if speech is too long for the bar
-        max_len = int(bar_duration_sec * SAMPLE_RATE * 0.85)
+        # Position: every 2 beats, offset by half a beat
+        pos = int(i * half_bar_sec * SAMPLE_RATE + beat_duration_sec * SAMPLE_RATE * 0.3)
+
+        # Trim if speech is too long for the slot
+        max_len = int(half_bar_sec * SAMPLE_RATE * 0.85)
         if len(speech) > max_len:
             speech = speech[:max_len]
 
