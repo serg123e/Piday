@@ -66,11 +66,26 @@ def generate_kick(duration_sec=0.15, sample_rate=SAMPLE_RATE):
     return kick
 
 
+def get_phrase_for_bar(bar_index):
+    """Return phrase index (0-15) for a given bar."""
+    return bar_index // PHRASE_BARS
+
+
 def generate_bassline(bar_index, bar_samples, sample_rate=SAMPLE_RATE):
-    """Generate a psy-trance bassline with evolving filter."""
-    base_freqs = [55, 55, 58.27, 55, 51.91, 55, 58.27, 61.74,
-                  55, 55, 58.27, 55, 51.91, 55, 58.27, 55]
-    base_freq = base_freqs[bar_index % len(base_freqs)]
+    """Generate a psy-trance bassline with evolving filter and phrase tonality."""
+    phrase = get_phrase_for_bar(bar_index)
+    bar_in_phrase = bar_index % PHRASE_BARS
+
+    # Two tonalities alternating by phrase:
+    # Odd phrases (1,3,5...): A minor — root A1=55Hz, with C, D, E
+    # Even phrases (0,2,4...): E minor — root E1=41.2Hz, with G, A, B
+    if phrase % 2 == 0:
+        # E minor
+        base_freqs = [41.20, 41.20, 49.00, 41.20, 46.25, 41.20, 49.00, 55.00]
+    else:
+        # A minor
+        base_freqs = [55.00, 55.00, 58.27, 55.00, 51.91, 55.00, 58.27, 61.74]
+    base_freq = base_freqs[bar_in_phrase % len(base_freqs)]
 
     sixteenth = beat_duration_sec / 4
     bass = np.zeros(bar_samples)
@@ -348,23 +363,25 @@ def main():
 
     # === PAD — evolving atmospheric layer ===
     print("Generating evolving pad...")
-    # Pad plays during rest periods (inhale) and gradually gets louder
-    # Minor key pad notes for psy-trance atmosphere
-    pad_notes = [110, 130.81, 146.83, 164.81]  # A2, C3, D3, E3
+    # Pad plays during rest periods, tonality matches phrase
+    # Even phrases: E minor chord tones (E, G, B)
+    # Odd phrases: A minor chord tones (A, C, E)
+    pad_notes_even = [82.41, 98.00, 123.47]   # E2, G2, B2 (Em)
+    pad_notes_odd = [110.00, 130.81, 164.81]   # A2, C3, E3 (Am)
     for phrase in range(NUM_PHRASES):
         progress = phrase / max(NUM_PHRASES - 1, 1)
         if progress < 0.15:
             continue  # No pad in the intro
 
         phrase_start_sec = phrase * PHRASE_BEATS * beat_duration_sec
-        # Pad plays during the rest period and slightly before
         pad_start_sec = phrase_start_sec + SPEAK_BEATS * beat_duration_sec - beat_duration_sec
         pad_duration = (REST_BEATS + 1) * beat_duration_sec
         pad_start_sample = int(pad_start_sec * SAMPLE_RATE)
 
+        pad_notes = pad_notes_even if phrase % 2 == 0 else pad_notes_odd
         note_freq = pad_notes[phrase % len(pad_notes)]
         pad = generate_pad_note(pad_duration, note_freq)
-        pad_vol = 0.3 + progress * 0.7  # gets louder over time
+        pad_vol = 0.3 + progress * 0.7
 
         end = min(pad_start_sample + len(pad), total_samples)
         actual_len = end - pad_start_sample
