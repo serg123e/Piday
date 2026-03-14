@@ -20,16 +20,17 @@ BARS = 64
 BEATS_PER_BAR = 4
 TOTAL_BEATS = BARS * BEATS_PER_BAR
 
-# Phrasing: digits every 2 beats, speak for PHRASE_SPEAK bars, rest for PHRASE_REST bars
-BEATS_PER_DIGIT = 2     # one digit every 2 beats
-PHRASE_SPEAK_BARS = 3    # 3 bars of digits on "exhale"
-PHRASE_REST_BARS = 1     # 1 bar pause "inhale"
-PHRASE_BARS = PHRASE_SPEAK_BARS + PHRASE_REST_BARS  # 4-bar phrase cycle
+# Phrasing: groups of 5 digits, then pause
+BEATS_PER_DIGIT = 2      # one digit every 2 beats
+DIGITS_PER_GROUP = 5     # 5 digits per "exhale" group
+SPEAK_BEATS = DIGITS_PER_GROUP * BEATS_PER_DIGIT  # 10 beats speaking
+REST_BEATS = 6           # 6 beats pause ("inhale") → total 16 beats = 4 bars
+PHRASE_BEATS = SPEAK_BEATS + REST_BEATS  # 16 beats = 4 bars per phrase
+PHRASE_BARS = PHRASE_BEATS // BEATS_PER_BAR  # 4 bars
 NUM_PHRASES = BARS // PHRASE_BARS  # 16 phrases
-DIGITS_PER_PHRASE = (PHRASE_SPEAK_BARS * BEATS_PER_BAR) // BEATS_PER_DIGIT  # 6 digits
-TOTAL_DIGITS = NUM_PHRASES * DIGITS_PER_PHRASE  # 96 digits
+TOTAL_DIGITS = NUM_PHRASES * DIGITS_PER_GROUP  # 80 digits
 
-# Pi digits — 96+ digits
+# Pi digits — 80+ digits
 PI_DIGITS = (
     "31415926535897932384626433832795028841971693993751"
     "05820974944592307816406286208998628034825342117067"
@@ -279,33 +280,33 @@ def main():
         bass = generate_bassline(bar, actual_bar_samples)
         mix[bar_start:bar_end] += bass[:actual_bar_samples]
 
-    # === TTS Pi digits — one every 2 beats, with phrase breathing ===
-    # Pattern: 3 bars speak (6 digits) + 1 bar rest (inhale), in 4-bar phrases
-    # Volume envelope per phrase simulates exhale then silence
-    print("Generating Pi digit speech (stress-aligned, phrased)...")
+    # === TTS Pi digits — groups of 5, then pause ===
+    # Pattern: 5 digits (10 beats) + 6 beats rest (inhale) = 16 beats = 4 bars
+    # Volume envelope per group simulates exhale then silence
+    print("Generating Pi digit speech (groups of 5, stress-aligned)...")
     tts_digits = generate_tts_digits()
     digit_interval_sec = beat_duration_sec * BEATS_PER_DIGIT
 
     digit_index = 0
     for phrase in range(NUM_PHRASES):
-        phrase_start_sec = phrase * PHRASE_BARS * bar_duration_sec
+        phrase_start_sec = phrase * PHRASE_BEATS * beat_duration_sec
 
-        for d in range(DIGITS_PER_PHRASE):
+        for d in range(DIGITS_PER_GROUP):
             if digit_index >= len(PI_DIGITS):
                 break
             digit = PI_DIGITS[digit_index]
             speech = tts_digits[digit].copy()
 
-            # Position: every 2 beats within the phrase
+            # Position: every 2 beats within the group
             digit_time = phrase_start_sec + d * digit_interval_sec
             pos = int(digit_time * SAMPLE_RATE)
 
-            # Exhale envelope: starts strong, fades toward end of phrase
-            progress = d / max(DIGITS_PER_PHRASE - 1, 1)
-            if progress < 0.15:
-                vol = 0.7 + progress * 2.0  # ramp in
+            # Exhale envelope over 5 digits
+            progress = d / max(DIGITS_PER_GROUP - 1, 1)
+            if progress < 0.2:
+                vol = 0.75 + progress * 1.25  # ramp in on first digit
             else:
-                vol = 1.0 - progress * 0.3  # gentle exhale fadeout
+                vol = 1.0 - progress * 0.25  # gentle exhale fadeout
             vol = max(vol, 0.5)
 
             end = min(pos + len(speech), total_samples)
@@ -315,7 +316,7 @@ def main():
 
             digit_index += 1
 
-    print(f"    Placed {digit_index} digits in {NUM_PHRASES} phrases")
+    print(f"    Placed {digit_index} digits in {NUM_PHRASES} groups of {DIGITS_PER_GROUP}")
 
     # === Normalize ===
     print("Mixing and normalizing...")
