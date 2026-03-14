@@ -330,8 +330,11 @@ h1 {
 let PI_STR = "3.14159265358979323846264338327950288419716939937510";
 let piFetchedTotal = 51; // API offset: "3" counts as position 0, so 50 digits after decimal = position 51
 let piFetching = false;
-const PI_FETCH_CHUNK = 1000; // fetch 1000 digits at a time
-const PI_PREFETCH_MARGIN = 200; // prefetch when this many digits remain
+let piFetchRetries = 0;
+let piDigitsExhausted = false; // true when API failed and digits ran out
+const PI_FETCH_CHUNK = 1000;
+const PI_PREFETCH_MARGIN = 200;
+const PI_FETCH_MAX_RETRIES = 3;
 
 async function fetchPiDigits(start, count) {
   const url = `https://api.pi.delivery/v1/pi?start=${start}&numberOfDigits=${count}`;
@@ -342,19 +345,28 @@ async function fetchPiDigits(start, count) {
 }
 
 async function ensurePiDigits(neededIndex) {
-  // neededIndex is into PI_STR (which has "3." prefix, so offset by 2)
-  const digitsAvailable = PI_STR.length - 2; // exclude "3."
+  if (piDigitsExhausted || piFetching) return;
+  const digitsAvailable = PI_STR.length - 2;
   const remaining = digitsAvailable - (neededIndex - 2);
-  if (remaining > PI_PREFETCH_MARGIN || piFetching) return;
+  if (remaining > PI_PREFETCH_MARGIN) return;
 
   piFetching = true;
   try {
     const raw = await fetchPiDigits(piFetchedTotal, PI_FETCH_CHUNK);
     PI_STR += raw;
     piFetchedTotal += PI_FETCH_CHUNK;
+    piFetchRetries = 0;
     console.log(`Pi digits loaded: ${piFetchedTotal} total`);
   } catch (e) {
-    console.error('Failed to fetch pi digits:', e);
+    piFetchRetries++;
+    console.error(`Failed to fetch pi digits (attempt ${piFetchRetries}/${PI_FETCH_MAX_RETRIES}):`, e);
+    if (piFetchRetries < PI_FETCH_MAX_RETRIES) {
+      piFetching = false;
+      setTimeout(() => ensurePiDigits(neededIndex), 2000 * piFetchRetries);
+      return;
+    }
+    console.warn('Pi digit fetching exhausted — voice will stop, music continues');
+    piDigitsExhausted = true;
   } finally {
     piFetching = false;
   }
@@ -745,8 +757,10 @@ function processState(time, beatDur, barDur) {
           }
           piIndex++;
           digitInPhrase++;
-          // Prefetch more digits when running low
           ensurePiDigits(piIndex);
+        } else {
+          // Digits exhausted — skip voice, keep music playing
+          digitInPhrase++;
         }
       }
 
@@ -824,9 +838,11 @@ function highlightDigit(idx) {
     html += '<span class="dim">...</span>'; // always show ... (infinite digits)
     display.innerHTML = html;
 
-    // Update status
-    document.getElementById('status').textContent =
-      `Digit ${idx - 1} of \u03C0 | Phrase ${phraseCount + 1} | Bar ${barCount}`;
+    // Update status (skip for initial state)
+    if (idx >= 0) {
+      document.getElementById('status').textContent =
+        `Digit ${idx - 1} of \u03C0 | Phrase ${phraseCount + 1} | Bar ${barCount}`;
+    }
   });
 }
 
@@ -952,7 +968,9 @@ function stopPlayback() {
   samplesLoaded = false;
   document.body.classList.remove('playing');
   document.getElementById('status').textContent = 'Press PLAY to begin the infinite digits of \u03C0';
-  highlightDigit(0);
+  piDigitsExhausted = false;
+  piFetchRetries = 0;
+  highlightDigit(-1);
 }
 
 // Hide loading on start
