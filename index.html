@@ -438,6 +438,13 @@ async function loadSamples() {
 //  SYNTHESIZERS (Web Audio API)
 // ============================================================
 
+// Helper: disconnect all nodes when the trigger node ends, preventing node accumulation
+function cleanupOnEnd(triggerNode, allNodes) {
+  triggerNode.onended = () => {
+    allNodes.forEach(n => { try { n.disconnect(); } catch(e) {} });
+  };
+}
+
 function playKick(time) {
   if (!channelEnabled.kick) return;
   const osc = ctx.createOscillator();
@@ -459,9 +466,10 @@ function playKick(time) {
   osc.connect(gain).connect(channels.kick);
   osc2.connect(gain2).connect(channels.kick);
   osc.start(time);
-  osc.stop(time + 0.16); // stop after envelope decays
+  osc.stop(time + 0.16);
   osc2.start(time);
-  osc2.stop(time + 0.03); // stop after gain reaches ~zero
+  osc2.stop(time + 0.03);
+  cleanupOnEnd(osc, [osc, gain, osc2, gain2]);
 }
 
 function playHihat(time, vol) {
@@ -486,6 +494,7 @@ function playHihat(time, vol) {
 
   src.connect(bp).connect(gain).connect(channels.hihat);
   src.start(time);
+  cleanupOnEnd(src, [src, bp, gain]);
 }
 
 function playBassNote(time, freq, duration, filterCutoff) {
@@ -506,10 +515,12 @@ function playBassNote(time, freq, duration, filterCutoff) {
   const env = ctx.createGain();
   env.gain.setValueAtTime(0.001, time);
   env.gain.linearRampToValueAtTime(1.0, time + 0.003);
-  env.gain.setValueAtTime(1.0, time + 0.003);
+  // No setValueAtTime here — it would cancel the ramp
   env.gain.exponentialRampToValueAtTime(0.001, time + duration);
 
-  const stopTime = time + duration + 0.01;
+  const stopTime = time + duration + 0.05; // extra margin before stop
+  const allNodes = [merger, filter, env];
+  let lastOsc;
   harmonics.forEach((h, i) => {
     const osc = ctx.createOscillator();
     osc.type = 'sine';
@@ -518,10 +529,13 @@ function playBassNote(time, freq, duration, filterCutoff) {
     g.gain.value = gains_arr[i];
     osc.connect(g).connect(merger);
     osc.start(time);
-    osc.stop(stopTime); // stop after envelope reaches zero
+    osc.stop(stopTime);
+    allNodes.push(osc, g);
+    lastOsc = osc;
   });
 
   merger.connect(env).connect(filter).connect(channels.bass);
+  if (lastOsc) cleanupOnEnd(lastOsc, allNodes);
 }
 
 function playPad(time, freq, duration) {
@@ -546,6 +560,7 @@ function playPad(time, freq, duration) {
   lfoGain.gain.value = 0.15;
   lfo.connect(lfoGain);
 
+  const allNodes = [merger, env, lfo, lfoGain];
   detunes.forEach(d => {
     const osc = ctx.createOscillator();
     osc.type = 'sine';
@@ -557,6 +572,7 @@ function playPad(time, freq, duration) {
     osc.connect(g).connect(merger);
     osc.start(time);
     osc.stop(time + duration + 0.1);
+    allNodes.push(osc, g);
   });
   lfo.start(time);
   lfo.stop(time + duration + 0.1);
@@ -570,8 +586,10 @@ function playPad(time, freq, duration) {
   osc2.connect(g2).connect(merger);
   osc2.start(time);
   osc2.stop(time + duration + 0.1);
+  allNodes.push(osc2, g2);
 
   merger.connect(env).connect(channels.pad);
+  cleanupOnEnd(osc2, allNodes);
 }
 
 function playRiser(time, duration) {
@@ -598,6 +616,7 @@ function playRiser(time, duration) {
   src.connect(filter).connect(gain).connect(channels.riser);
   src.start(time);
   src.stop(time + duration);
+  cleanupOnEnd(src, [src, filter, gain]);
 }
 
 function playDigitSample(time, digit) {
@@ -608,6 +627,7 @@ function playDigitSample(time, digit) {
   gain.gain.value = params.voxVol;
   src.connect(gain).connect(channels.vox);
   src.start(time);
+  cleanupOnEnd(src, [src, gain]);
 }
 
 // ============================================================
